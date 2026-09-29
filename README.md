@@ -210,7 +210,7 @@ em `ghcr.io/betodalas/teste-sre-roberto:latest` (é exatamente o que
 Esse fluxo funciona em qualquer cluster Kubernetes (local ou remoto) que
 você já tenha acesso via `kubectl` — não depende de AWS/EKS.
 
-## Bônus: como seria com pipeline 100% automatizada (ECR + EKS)
+## Como seria com pipeline 100% automatizada (ECR + EKS)
 
 Esta seção é só **referência/documentação** — não há nenhum workflow ativo
 no repositório fazendo isso. Hoje o CI já builda e publica a imagem

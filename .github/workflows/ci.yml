@@ -27,6 +27,52 @@ jobs:
       - name: Build Docker image
         run: docker build -t math-api:ci .
 
+      - name: Run container
+        run: docker run -d --name math-api -p 8000:8000 math-api:ci
+
+      - name: Wait for healthcheck
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/healthz; then
+              echo "service is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "service did not become healthy in time" >&2
+          docker logs math-api
+          exit 1
+
+      - name: Integration test - endpoints
+        run: |
+          set -euo pipefail
+
+          check() {
+            local desc="$1" url="$2" expected="$3"
+            actual=$(curl -sf "$url")
+            if [ "$actual" != "$expected" ]; then
+              echo "FAIL ($desc): expected '$expected', got '$actual'" >&2
+              exit 1
+            fi
+            echo "OK ($desc): $actual"
+          }
+
+          check "sum" "http://localhost:8000/api/sum?term_one=4&term_two=1" '{"result":5}'
+          check "sub" "http://localhost:8000/api/sub?term_one=4&term_two=1" '{"result":3}'
+          check "mul" "http://localhost:8000/api/mul?term_one=4&term_two=1" '{"result":4}'
+          check "div" "http://localhost:8000/api/div?term_one=4&term_two=2" '{"result":2}'
+
+          status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/api/div?term_one=4&term_two=0")
+          if [ "$status" != "400" ]; then
+            echo "FAIL (div by zero): expected HTTP 400, got $status" >&2
+            exit 1
+          fi
+          echo "OK (div by zero): HTTP 400"
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f math-api || true
+
   # Publica a imagem no GitHub Container Registry só a partir de pushes na
   # main (não em PRs), taggeada com o SHA do commit e "latest".
   publish:

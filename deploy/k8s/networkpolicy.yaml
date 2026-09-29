@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: math-api
+  labels:
+    app: math-api
+spec:
+  podSelector:
+    matchLabels:
+      app: math-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic only from other pods inside this same cluster/namespace
+    # set, reinforcing (in addition to the ClusterIP Service) that the API
+    # is not reachable from outside the cluster.
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000

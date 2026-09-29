@@ -81,6 +81,9 @@ Os manifests estão em `deploy/k8s/` e usam Kustomize:
 - `service.yaml`: `Service` do tipo `ClusterIP`, garantindo que a
   aplicação seja acessível **somente por outras aplicações dentro do
   cluster** (sem exposição externa via LoadBalancer/Ingress).
+- `networkpolicy.yaml`: reforça a restrição acima em nível de rede,
+  permitindo tráfego de entrada apenas de pods dentro do cluster (nenhum
+  ingress externo é liberado para os pods da aplicação).
 
 ### Publicar a imagem
 
@@ -157,6 +160,18 @@ kubectl apply -k deploy/k8s
 kubectl -n math-api rollout status deployment/math-api
 ```
 
+### Rollback
+
+Se um novo deploy apresentar problema, reverta para a revisão anterior do
+`Deployment` sem precisar reaplicar manifests antigos:
+
+```bash
+kubectl -n math-api rollout undo deployment/math-api
+kubectl -n math-api rollout status deployment/math-api
+```
+
+Para ver o histórico de revisões: `kubectl -n math-api rollout history deployment/math-api`.
+
 ### Remover a aplicação
 
 ```bash
@@ -172,9 +187,12 @@ O workflow [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) roda em
 dois jobs, a cada push/PR:
 
 1. **`test`** (todo push e PR): `go vet`, testes com cobertura
-   (`go test ./... -race -coverprofile`) e `docker build` local só pra
-   validar que o Dockerfile builda — essa imagem é descartada no final do
-   job, não fica salva em lugar nenhum.
+   (`go test ./... -race -coverprofile`), `docker build` local e um teste
+   de integração real — o job sobe o container, aguarda o `/healthz`
+   ficar `ok` e faz `curl` nos 4 endpoints (`sum`, `sub`, `mul`, `div`,
+   incluindo divisão por zero retornando `400`) contra a imagem recém
+   buildada. Essa imagem é descartada no final do job, não fica salva em
+   lugar nenhum.
 2. **`publish`** (só em push na `main`, depois do `test` passar): faz login
    no **GHCR** (`ghcr.io`) com o próprio `GITHUB_TOKEN` do workflow — sem
    precisar cadastrar credenciais — e builda + publica a imagem em:

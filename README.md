@@ -148,40 +148,6 @@ Isso remove o `Deployment`, o `Service` e o `Namespace` `math-api`.
 
 O workflow [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) roda em
 todo push/PR: `go vet`, testes com cobertura e o build da imagem Docker.
-
-## Deploy automático (GitHub Actions, sem Argo CD)
-
-O workflow [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)
-builda a imagem, publica no ECR e aplica os manifests direto no cluster via
-`kubectl` — sem Argo CD. Ele reaproveita o **mesmo cluster EKS** usado pelo
-projeto `hello-eks-observability`, mas não altera nada daquele repositório.
-
-### Setup único (uma vez, com credenciais AWS admin)
-
-```bash
-./scripts/setup-aws-access.sh
-```
-
-O script cria, na sua conta AWS:
-
-- Uma IAM Role (`teste-sre-roberto-deploy`) com trust policy de OIDC restrita
-  a `repo:betodalas/teste-sre-roberto:*`, reaproveitando o OIDC provider do
-  GitHub já existente na conta (o mesmo criado para o
-  `hello-eks-observability`).
-- Uma policy inline com permissão só para: push/pull no repositório ECR
-  `math-api` e `eks:DescribeCluster` no cluster `hello-observability-prod`.
-- Um **EKS Access Entry** associando essa role à policy gerenciada
-  `AmazonEKSEditPolicy` (não é cluster-admin) no cluster.
-
-No final, o script imprime os valores a cadastrar em **Settings → Secrets
-and variables → Actions → Variables** do repositório `teste-sre-roberto`:
-
-| Variável              | Valor                                             |
-| --------------------- | -------------------------------------------------- |
-| `AWS_DEPLOY_ROLE_ARN` | ARN da role criada pelo script                     |
-| `AWS_REGION`          | `us-east-1`                                        |
-| `EKS_CLUSTER_NAME`    | `hello-observability-prod`                         |
-| `ECR_REPOSITORY`      | `math-api`                                         |
-
-Depois de cadastrar essas variáveis, todo push em `main` (que altere código,
-`Dockerfile` ou `deploy/k8s/`) builda, publica e faz o deploy automaticamente.
+Não há deploy automático — o apply no cluster é sempre manual, seguindo os
+passos da seção "Deploy no Kubernetes" acima, em qualquer cluster
+Kubernetes (local ou remoto) que você já tenha acesso via `kubectl`.

@@ -84,14 +84,36 @@ Os manifests estão em `deploy/k8s/` e usam Kustomize:
 
 ### Publicar a imagem
 
-Build e publique a imagem em um registry acessível pelo cluster (ajuste o
-nome conforme seu registry) e atualize o campo `image` em
-`deploy/k8s/deployment.yaml`:
+O CI já publica automaticamente a imagem no **GHCR** a cada push na `main`
+(veja `.github/workflows/ci.yml`, job `publish`), em:
+
+```
+ghcr.io/betodalas/teste-sre-roberto:latest
+ghcr.io/betodalas/teste-sre-roberto:<sha-do-commit>
+```
+
+`deploy/k8s/deployment.yaml` já referencia essa mesma imagem — **não
+precisa editar nada** para usar a versão publicada pelo CI.
+
+**Importante — na primeira publicação**, o pacote no GHCR normalmente
+nasce **privado**. Torne-o público (senão o `kubectl`/cluster não consegue
+puxar a imagem sem um `imagePullSecret`):
+
+1. Acesse `https://github.com/betodalas?tab=packages` (ou a aba
+   **Packages** do repositório).
+2. Abra o pacote `teste-sre-roberto` → **Package settings**.
+3. Em **Danger Zone**, mude a visibilidade para **Public**.
+
+Se preferir publicar manualmente em outro registry (ou não usar o GHCR),
+o processo continua sendo:
 
 ```bash
 docker build -t <seu-registry>/teste-sre-roberto:latest .
 docker push <seu-registry>/teste-sre-roberto:latest
 ```
+
+Nesse caso, atualize o campo `image` em `deploy/k8s/deployment.yaml` para
+apontar pro seu registry.
 
 ### Aplicar os manifests
 

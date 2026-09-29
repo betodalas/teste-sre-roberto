@@ -151,3 +151,109 @@ todo push/PR: `go vet`, testes com cobertura e o build da imagem Docker.
 Não há deploy automático — o apply no cluster é sempre manual, seguindo os
 passos da seção "Deploy no Kubernetes" acima, em qualquer cluster
 Kubernetes (local ou remoto) que você já tenha acesso via `kubectl`.
+
+## Bônus: como seria com pipeline 100% automatizada (ECR + EKS)
+
+Esta seção é só **referência/documentação** — não há nenhum workflow ativo
+no repositório fazendo isso. Descreve como o deploy poderia ser
+automatizado publicando no Amazon ECR e aplicando direto num cluster EKS a
+cada push, sem Argo CD.
+
+### 1. Autenticação sem secrets estáticos (IAM Role + OIDC do GitHub)
+
+Em vez de `AWS_ACCESS_KEY_ID`/`SECRET` fixos, uma IAM Role com trust policy
+restrita a este repositório, assumida via OIDC a cada execução do workflow:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Federated": "arn:aws:iam::<conta>:oidc-provider/token.actions.githubusercontent.com" },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+      "StringLike":  { "token.actions.githubusercontent.com:sub": "repo:betodalas/teste-sre-roberto:*" }
+    }
+  }]
+}
+```
+
+A role teria permissão mínima: push/pull no repositório ECR `math-api` e
+`eks:DescribeCluster` no cluster alvo.
+
+### 2. Acesso ao Kubernetes (EKS Access Entry)
+
+IAM sozinho não autoriza chamadas ao `kube-apiserver`; é preciso registrar a
+role como um "usuário" do cluster (API moderna de Access Entries,
+substituindo o antigo `aws-auth` ConfigMap):
+
+```bash
+aws eks create-access-entry --cluster-name <cluster> \
+  --principal-arn <role-arn> --type STANDARD
+
+aws eks associate-access-policy --cluster-name <cluster> \
+  --principal-arn <role-arn> \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy \
+  --access-scope type=cluster
+```
+
+`AmazonEKSEditPolicy` dá permissão para criar/atualizar recursos, mas não é
+cluster-admin nem mexe em RBAC/identidades.
+
+### 3. Workflow do GitHub Actions
+
+```yaml
+name: Build and deploy (ECR + EKS)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # necessário pro OIDC
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build and push image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name ${{ vars.EKS_CLUSTER_NAME }}
+
+      - name: Deploy
+        run: |
+          kubectl kustomize deploy/k8s \
+            | sed "s#ghcr.io/betodalas/teste-sre-roberto:latest#${IMAGE}#" \
+            | kubectl apply -f -
+          kubectl -n math-api rollout status deployment/math-api --timeout=120s
+```
+
+### 4. Variáveis do repositório (Settings → Secrets and variables → Actions → Variables)
+
+| Variável              | Exemplo                                    |
+| --------------------- | ------------------------------------------- |
+| `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::<conta>:role/teste-sre-roberto-deploy` |
+| `AWS_REGION`          | `us-east-1`                                 |
+| `EKS_CLUSTER_NAME`    | `<nome-do-cluster>`                         |
+| `ECR_REPOSITORY`      | `math-api`                                  |
+
+Com isso, todo push em `main` buildaria, publicaria no ECR e aplicaria os
+manifests automaticamente — sem intervenção manual e sem Argo CD.

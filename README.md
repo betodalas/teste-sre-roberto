@@ -166,20 +166,40 @@ kubectl delete -k deploy/k8s
 
 Isso remove o `Deployment`, o `Service` e o `Namespace` `math-api`.
 
-## CI
+## CI/CD: como o build e o publish estão sendo feitos hoje
 
 O workflow [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) roda em
-todo push/PR: `go vet`, testes com cobertura e o build da imagem Docker.
-Não há deploy automático — o apply no cluster é sempre manual, seguindo os
-passos da seção "Deploy no Kubernetes" acima, em qualquer cluster
-Kubernetes (local ou remoto) que você já tenha acesso via `kubectl`.
+dois jobs, a cada push/PR:
+
+1. **`test`** (todo push e PR): `go vet`, testes com cobertura
+   (`go test ./... -race -coverprofile`) e `docker build` local só pra
+   validar que o Dockerfile builda — essa imagem é descartada no final do
+   job, não fica salva em lugar nenhum.
+2. **`publish`** (só em push na `main`, depois do `test` passar): faz login
+   no **GHCR** (`ghcr.io`) com o próprio `GITHUB_TOKEN` do workflow — sem
+   precisar cadastrar credenciais — e builda + publica a imagem em:
+
+   ```
+   ghcr.io/betodalas/teste-sre-roberto:latest
+   ghcr.io/betodalas/teste-sre-roberto:<sha-do-commit>
+   ```
+
+Ou seja: **o build e o push são automáticos** (CI), mas o **apply no
+cluster é manual** — você (ou o avaliador) roda `kubectl apply -k
+deploy/k8s` quando quiser, apontando pra imagem que o CI já deixou pronta
+em `ghcr.io/betodalas/teste-sre-roberto:latest` (é exatamente o que
+`deploy/k8s/deployment.yaml` referencia, então não precisa editar nada).
+Esse fluxo funciona em qualquer cluster Kubernetes (local ou remoto) que
+você já tenha acesso via `kubectl` — não depende de AWS/EKS.
 
 ## Bônus: como seria com pipeline 100% automatizada (ECR + EKS)
 
 Esta seção é só **referência/documentação** — não há nenhum workflow ativo
-no repositório fazendo isso. Descreve como o deploy poderia ser
-automatizado publicando no Amazon ECR e aplicando direto num cluster EKS a
-cada push, sem Argo CD.
+no repositório fazendo isso. Hoje o CI já builda e publica a imagem
+automaticamente (no GHCR, seção acima); o que faltaria pra "tudo
+automático" é o **próprio apply no cluster** também rodar no pipeline, sem
+intervenção manual. Descreve como isso ficaria publicando no Amazon ECR e
+aplicando direto num cluster EKS a cada push, sem Argo CD.
 
 ### 1. Autenticação sem secrets estáticos (IAM Role + OIDC do GitHub)
 

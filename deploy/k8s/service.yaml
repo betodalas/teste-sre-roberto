@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: math-api
+  labels:
+    app: math-api
+spec:
+  # ClusterIP (default) keeps the application reachable only from inside the
+  # Kubernetes cluster, as required by the challenge.
+  type: ClusterIP
+  selector:
+    app: math-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
